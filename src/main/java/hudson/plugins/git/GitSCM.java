@@ -53,6 +53,7 @@ import hudson.util.ListBoxModel;
 import jenkins.model.Jenkins;
 import jenkins.plugins.git.GitSCMMatrixUtil;
 import jenkins.plugins.git.GitToolChooser;
+import jenkins.plugins.git.MergeWithGitSCMExtension;
 import net.sf.json.JSONObject;
 
 import org.eclipse.jgit.errors.MissingObjectException;
@@ -1219,6 +1220,11 @@ public class GitSCM extends GitSCMBackwardCompatibility {
             try {
                 CloneCommand cmd = git.clone_().url(rc.getURIs().get(0).toPrivateString()).repositoryName(rc.getName());
                 for (GitSCMExtension ext : extensions) {
+                    // We want to honor shallow clone depth when HONOR_SHALLOW_DEPTH_ON_MERGE is set to true
+                    if (ext instanceof MergeWithGitSCMExtension && System.getProperty("HONOR_SHALLOW_DEPTH_ON_MERGE") == "true") {
+                        log.println("MergeWithGitSCMExtension is skipped due to HONOR_SHALLOW_DEPTH_ON_MERGE is enabled");
+                        continue;
+                    }
                     ext.decorateCloneCommand(this, build, git, listener, cmd);
                 }
                 cmd.execute();
