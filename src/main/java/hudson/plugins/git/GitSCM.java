@@ -993,7 +993,8 @@ public class GitSCM extends GitSCMBackwardCompatibility {
                     git.addRemoteUrl(remoteRepository.getName(), url.toPrivateASCIIString());
                 }
 
-                FetchCommand fetch = git.fetch_().from(url, remoteRepository.getFetchRefSpecs());
+                FetchCommand fetch = git.fetch_().from(url, remoteRepository.getFetchRefSpecs())
+                                                .from(remoteRepository.getName(), remoteRepository.getFetchRefSpecs());
                 for (GitSCMExtension extension : extensions) {
                     extension.decorateFetchCommand(this, run, git, listener, fetch);
                 }
@@ -1221,7 +1222,8 @@ public class GitSCM extends GitSCMBackwardCompatibility {
                 CloneCommand cmd = git.clone_().url(rc.getURIs().get(0).toPrivateString()).repositoryName(rc.getName());
                 for (GitSCMExtension ext : extensions) {
                     // We want to honor shallow clone depth when HONOR_SHALLOW_DEPTH_ON_MERGE is set to true
-                    if (ext instanceof MergeWithGitSCMExtension && System.getProperty("HONOR_SHALLOW_DEPTH_ON_MERGE") == "true") {
+                    String HONOR_SHALLOW_DEPTH_ON_MERGE = System.getProperty("HONOR_SHALLOW_DEPTH_ON_MERGE");
+                    if (ext instanceof MergeWithGitSCMExtension && HONOR_SHALLOW_DEPTH_ON_MERGE != null && HONOR_SHALLOW_DEPTH_ON_MERGE.equals("true")) {
                         log.println("MergeWithGitSCMExtension is skipped due to HONOR_SHALLOW_DEPTH_ON_MERGE is enabled");
                         continue;
                     }
