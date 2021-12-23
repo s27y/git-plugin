@@ -1349,9 +1349,14 @@ public class GitSCM extends GitSCMBackwardCompatibility {
             }
         }
 
-        listener.getLogger().println("Checking out " + revToBuild.revision);
+        String commitToBuild = revToBuild.revision.getSha1String();
+        if (!this.getBranches().isEmpty()) {
+            commitToBuild = this.getBranches().get(0).toString();
+            listener.getLogger().println("A commit ID is passed in, override the checkout hash to: " + commitToBuild);
+        }
 
-        CheckoutCommand checkoutCommand = git.checkout().branch(localBranchName).ref(revToBuild.revision.getSha1String()).deleteBranchIfExist(true);
+        listener.getLogger().println("Checking out " + commitToBuild);
+        CheckoutCommand checkoutCommand = git.checkout().branch(localBranchName).ref(commitToBuild).deleteBranchIfExist(true);
         for (GitSCMExtension ext : this.getExtensions()) {
             ext.decorateCheckoutCommand(this, build, git, listener, checkoutCommand);
         }
@@ -1360,7 +1365,7 @@ public class GitSCM extends GitSCMBackwardCompatibility {
           checkoutCommand.execute();
         } catch (GitLockFailedException e) {
             // Rethrow IOException so the retry will be able to catch it
-            throw new IOException("Could not checkout " + revToBuild.revision.getSha1String(), e);
+            throw new IOException("Could not checkout " + commitToBuild, e);
         }
 
         // Needs to be after the checkout so that revToBuild is in the workspace
