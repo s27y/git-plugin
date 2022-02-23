@@ -1192,6 +1192,12 @@ public class AbstractGitSCMSourceTest {
                         throw new GitException(e);
                     }
                 }
+
+                @Override
+                public FetchCommand from(String predefinedRemote, List<RefSpec> refspecs) {
+                    // TODO Auto-generated method stub
+                    return null;
+                }
             };
         }
     }

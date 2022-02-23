@@ -1122,6 +1122,8 @@ public class GitSCM extends GitSCMBackwardCompatibility {
                                               final EnvVars environment,
                                               final @NonNull GitClient git,
                                               final @NonNull TaskListener listener) throws IOException, InterruptedException {
+        Pattern commitHashPattern = Pattern.compile("[0-9a-f]{40}", Pattern.CASE_INSENSITIVE);
+        Boolean overrideCommitId = !this.getBranches().isEmpty() && commitHashPattern.matcher(this.getBranches().get(0).toString()).find();
         PrintStream log = listener.getLogger();
         Collection<Revision> candidates = Collections.emptyList();
         final BuildChooserContext context = new BuildChooserContextImpl(build.getParent(), build, environment);
@@ -1161,9 +1163,24 @@ public class GitSCM extends GitSCMBackwardCompatibility {
 
         Revision marked = candidates.iterator().next();
         Revision rev = marked;
+
         // Modify the revision based on extensions
+
+        Boolean isMergeBuild = false;
         for (GitSCMExtension ext : extensions) {
-            rev = ext.decorateRevisionToBuild(this,build,git,listener,marked,rev);
+            if (ext instanceof MergeWithGitSCMExtension) {
+                isMergeBuild = true;
+                if (overrideCommitId) {
+                    listener.getLogger().println("A commit ID is passed in, override the merge source commit hash to: " + this.getBranches().get(0).toString());
+                    rev.setSha1(ObjectId.fromString(this.getBranches().get(0).toString()));
+                } 
+            }
+            rev = ext.decorateRevisionToBuild(this,build,git,listener,marked,rev);         
+        }
+
+        if (!isMergeBuild && overrideCommitId) {
+            rev.setSha1(ObjectId.fromString(this.getBranches().get(0).toString()));
+            listener.getLogger().println("A commit ID is passed in, override the checkout hash to: " + this.getBranches().get(0).toString());
         }
         Build revToBuild = new Build(marked, rev, build.getNumber(), null);
         buildData.saveBuild(revToBuild);
@@ -1308,6 +1325,7 @@ public class GitSCM extends GitSCMBackwardCompatibility {
         }
 
         retrieveChanges(build, git, listener);
+
         Build revToBuild = determineRevisionToBuild(build, buildData, environment, git, listener);
 
         // Track whether we're trying to add a duplicate BuildData, now that it's been updated with
@@ -1349,14 +1367,9 @@ public class GitSCM extends GitSCMBackwardCompatibility {
             }
         }
 
-        String commitToBuild = revToBuild.revision.getSha1String();
-        if (!this.getBranches().isEmpty()) {
-            commitToBuild = this.getBranches().get(0).toString();
-            listener.getLogger().println("A commit ID is passed in, override the checkout hash to: " + commitToBuild);
-        }
+        listener.getLogger().println("Checking out " + revToBuild.revision);
 
-        listener.getLogger().println("Checking out " + commitToBuild);
-        CheckoutCommand checkoutCommand = git.checkout().branch(localBranchName).ref(commitToBuild).deleteBranchIfExist(true);
+        CheckoutCommand checkoutCommand = git.checkout().branch(localBranchName).ref(revToBuild.revision.getSha1String()).deleteBranchIfExist(true);
         for (GitSCMExtension ext : this.getExtensions()) {
             ext.decorateCheckoutCommand(this, build, git, listener, checkoutCommand);
         }
@@ -1365,7 +1378,7 @@ public class GitSCM extends GitSCMBackwardCompatibility {
           checkoutCommand.execute();
         } catch (GitLockFailedException e) {
             // Rethrow IOException so the retry will be able to catch it
-            throw new IOException("Could not checkout " + commitToBuild, e);
+            throw new IOException("Could not checkout " + revToBuild.revision.getSha1String(), e);
         }
 
         // Needs to be after the checkout so that revToBuild is in the workspace
