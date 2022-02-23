@@ -53,6 +53,7 @@ import hudson.util.ListBoxModel;
 import jenkins.model.Jenkins;
 import jenkins.plugins.git.GitSCMMatrixUtil;
 import jenkins.plugins.git.GitToolChooser;
+import jenkins.plugins.git.MergeWithGitSCMExtension;
 import net.sf.json.JSONObject;
 
 import org.eclipse.jgit.errors.MissingObjectException;
@@ -992,7 +993,8 @@ public class GitSCM extends GitSCMBackwardCompatibility {
                     git.addRemoteUrl(remoteRepository.getName(), url.toPrivateASCIIString());
                 }
 
-                FetchCommand fetch = git.fetch_().from(url, remoteRepository.getFetchRefSpecs());
+                FetchCommand fetch = git.fetch_().from(url, remoteRepository.getFetchRefSpecs())
+                                                .from(remoteRepository.getName(), remoteRepository.getFetchRefSpecs());
                 for (GitSCMExtension extension : extensions) {
                     extension.decorateFetchCommand(this, run, git, listener, fetch);
                 }
@@ -1219,6 +1221,12 @@ public class GitSCM extends GitSCMBackwardCompatibility {
             try {
                 CloneCommand cmd = git.clone_().url(rc.getURIs().get(0).toPrivateString()).repositoryName(rc.getName());
                 for (GitSCMExtension ext : extensions) {
+                    // We want to honor shallow clone depth when HONOR_SHALLOW_DEPTH_ON_MERGE is set to true
+                    String HONOR_SHALLOW_DEPTH_ON_MERGE = System.getProperty("HONOR_SHALLOW_DEPTH_ON_MERGE");
+                    if (ext instanceof MergeWithGitSCMExtension && HONOR_SHALLOW_DEPTH_ON_MERGE != null && HONOR_SHALLOW_DEPTH_ON_MERGE.equals("true")) {
+                        log.println("MergeWithGitSCMExtension is skipped due to HONOR_SHALLOW_DEPTH_ON_MERGE is enabled");
+                        continue;
+                    }
                     ext.decorateCloneCommand(this, build, git, listener, cmd);
                 }
                 cmd.execute();
@@ -1341,9 +1349,14 @@ public class GitSCM extends GitSCMBackwardCompatibility {
             }
         }
 
-        listener.getLogger().println("Checking out " + revToBuild.revision);
+        String commitToBuild = revToBuild.revision.getSha1String();
+        if (!this.getBranches().isEmpty()) {
+            commitToBuild = this.getBranches().get(0).toString();
+            listener.getLogger().println("A commit ID is passed in, override the checkout hash to: " + commitToBuild);
+        }
 
-        CheckoutCommand checkoutCommand = git.checkout().branch(localBranchName).ref(revToBuild.revision.getSha1String()).deleteBranchIfExist(true);
+        listener.getLogger().println("Checking out " + commitToBuild);
+        CheckoutCommand checkoutCommand = git.checkout().branch(localBranchName).ref(commitToBuild).deleteBranchIfExist(true);
         for (GitSCMExtension ext : this.getExtensions()) {
             ext.decorateCheckoutCommand(this, build, git, listener, checkoutCommand);
         }
@@ -1352,7 +1365,7 @@ public class GitSCM extends GitSCMBackwardCompatibility {
           checkoutCommand.execute();
         } catch (GitLockFailedException e) {
             // Rethrow IOException so the retry will be able to catch it
-            throw new IOException("Could not checkout " + revToBuild.revision.getSha1String(), e);
+            throw new IOException("Could not checkout " + commitToBuild, e);
         }
 
         // Needs to be after the checkout so that revToBuild is in the workspace
